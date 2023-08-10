@@ -14,6 +14,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import argparse
+import hashlib
+import json
 import locale
 import os
 import platform
@@ -24,6 +26,10 @@ from yamllint import linter
 from yamllint.config import YamlLintConfig, YamlLintConfigError
 from yamllint.linter import PROBLEM_LEVELS
 
+CODECLIMATE_SEVERITY = {
+    'warning': 'MINOR',
+    'error': 'MAJOR'
+}
 
 def find_files_recursively(items, conf):
     for item in items:
@@ -55,6 +61,24 @@ class Format:
                  'column': problem.column,
                  'level': problem.level,
                  'message': problem.message})
+
+    @staticmethod
+    def codeclimate(problem, filename):
+        return {
+            'check_name': 'yamllint',
+            'engine_name': 'yamllint',
+            'description': problem.message,
+            'type': 'issue',
+            'fingerprint': 'xxx',
+            'severity': CODECLIMATE_SEVERITY[problem.level],
+            'location': {
+                'path': filename,
+                'lines': {
+                    'start': problem.line,
+                    'end': problem.line
+                }
+            }
+        }
 
     @staticmethod
     def standard(problem, filename):
@@ -102,6 +126,7 @@ class Format:
 def show_problems(problems, file, args_format, no_warn):
     max_level = 0
     first = True
+    codeclimate_problems = []
 
     if args_format == 'auto':
         if ('GITHUB_ACTIONS' in os.environ and
@@ -126,6 +151,8 @@ def show_problems(problems, file, args_format, no_warn):
                 print('\033[4m%s\033[0m' % file)
                 first = False
             print(Format.standard_color(problem, file))
+        elif args_format == 'codeclimate':
+            codeclimate_problems.append(Format.codeclimate(problem, file))
         else:
             if first:
                 print(file)
@@ -137,6 +164,9 @@ def show_problems(problems, file, args_format, no_warn):
 
     if not first and args_format != 'parsable':
         print('')
+
+    if args_format == 'codeclimate':
+        print(json.dumps(codeclimate_problems))
 
     return max_level
 
@@ -174,7 +204,7 @@ def run(argv=None):
                         help='list files to lint and exit')
     parser.add_argument('-f', '--format',
                         choices=('parsable', 'standard', 'colored', 'github',
-                                 'auto'),
+                                 'codeclimate', 'auto'),
                         default='auto', help='format for parsing output')
     parser.add_argument('-s', '--strict',
                         action='store_true',
